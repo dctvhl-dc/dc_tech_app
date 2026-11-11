@@ -50,6 +50,17 @@ class BookingProvider extends ChangeNotifier {
   Future<void> changeStatus(Booking b, BookingStatus s) =>
       save(b.copyWith(status: s), isNew: false);
 
+  /// Hủy đơn hàng kèm lý do (chỉ dành cho đơn chưa giao).
+  Future<void> cancelBooking(Booking b, String reason, String username) => save(
+        b.copyWith(
+          status: BookingStatus.cancelled,
+          cancelReason: reason,
+          updatedBy: username,
+          updatedAt: DateTime.now(),
+        ),
+        isNew: false,
+      );
+
   /// TẤT CẢ đơn (kể cả của người khác) — chỉ dùng để kiểm tra trùng lịch / tồn kho,
   /// không lưu vào danh sách hiển thị.
   Future<List<Booking>> fetchAll() => _sheets.fetchBookings();

@@ -14,14 +14,26 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Flutter
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
           cache: true
 
-      - name: Install Dependencies
+      - name: Install Flutter Dependencies
         run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install || pod install --repo-update
+          cd ..
 
       - name: Build iOS Framework & App
         run: flutter build ios --release --no-codesign
@@ -31,6 +43,7 @@ jobs:
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
+          rm -f DC_TECH_Rental.ipa
           zip -r DC_TECH_Rental.ipa Payload
 
       - name: Upload IPA Artifact

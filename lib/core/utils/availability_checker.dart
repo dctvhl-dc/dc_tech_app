@@ -16,7 +16,7 @@ class StockConflict {
 
 /// Kiểm tra trùng lịch theo SỐ LƯỢNG: dịch vụ có `quantity = 3` thì tối đa 3 đơn
 /// (hoặc tổng 3 chiếc) được giữ cùng lúc.
-/// Chỉ tính các đơn chưa trả loa; khoảng giữ = [thời gian giao, thời gian thu hồi).
+/// Chỉ tính các đơn chưa trả loa và chưa hủy; khoảng giữ = [thời gian giao, thời gian thu hồi).
 class AvailabilityChecker {
   /// Ghép dòng dịch vụ trong đơn với danh mục: theo mã, không có thì theo tên.
   static RentalService? resolve(BookingServiceItem it, List<RentalService> catalog) {
@@ -55,6 +55,7 @@ class AvailabilityChecker {
         .where((b) =>
             b.id != excludeBookingId &&
             b.status != BookingStatus.returned &&
+            b.status != BookingStatus.cancelled &&
             b.installTime != null &&
             b.collectTime != null &&
             b.installTime!.isBefore(end) &&

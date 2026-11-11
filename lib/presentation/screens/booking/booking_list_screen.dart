@@ -15,7 +15,7 @@ import '../../../providers/user_provider.dart';
 import '../slip/slip_screen.dart';
 import 'add_booking_screen.dart';
 
-/// Danh sách đơn: tìm kiếm, lọc trạng thái, bấm để sửa, nút nhanh Giao/Thu loa.
+/// Danh sách đơn: tìm kiếm, lọc trạng thái, bấm để sửa, nút nhanh Giao/Thu/Hủy đơn.
 class BookingListScreen extends StatefulWidget {
   const BookingListScreen({super.key});
   @override
@@ -26,8 +26,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
   final _search = TextEditingController();
   BookingStatus? _filter; // null = tất cả
 
-  // Mặc định chỉ hiện đơn 30 ngày gần đây (và các đơn sắp tới). Muốn xem lâu hơn:
-  // dùng "Tìm nâng cao" để chọn khoảng thời gian.
   static const int _defaultDays = 30;
   DateTimeRange? _range; // null = mặc định 30 ngày gần đây
   bool _debtOnly = false; // chỉ đơn còn công nợ
@@ -56,10 +54,10 @@ class _BookingListScreenState extends State<BookingListScreen> {
     super.dispose();
   }
 
-  void _snack(String msg) {
+  void _snack(String msg, {bool error = true}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.red),
+      SnackBar(content: Text(msg), backgroundColor: error ? AppColors.red : AppColors.green),
     );
   }
 
@@ -94,7 +92,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
     ),
   );
 
-  /// "Giao loa" / "Thu loa": mở form đơn với trạng thái mới và phần chụp ảnh.
   void _openForStatus(Booking b) => Navigator.push<bool>(
     context,
     MaterialPageRoute(
@@ -107,20 +104,83 @@ class _BookingListScreenState extends State<BookingListScreen> {
     ),
   );
 
+  /// Thao tác Hủy đơn trực tiếp từ thẻ đơn hàng.
+  Future<void> _cancelBookingDialog(Booking b) async {
+    if (b.status != BookingStatus.pending) {
+      _snack('Chỉ có thể hủy đơn hàng chưa giao.');
+      return;
+    }
+
+    final reasonCtrl = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: AppColors.red),
+            SizedBox(width: 8),
+            Text('Hủy đơn hàng'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bạn có chắc chắn muốn hủy đơn hàng #${b.id}?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Lý do hủy đơn',
+                hintText: 'Nhập lý do khách hủy / trùng lịch...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Quay lại')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Xác nhận Hủy'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    final reason = reasonCtrl.text.trim();
+    if (reason.isEmpty) {
+      _snack('Vui lòng nhập lý do hủy đơn');
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final provider = context.read<BookingProvider>();
+    try {
+      await provider.cancelBooking(b, reason, auth.currentUser!.username);
+      _snack('Đã hủy đơn hàng #${b.id}', error: false);
+    } catch (e) {
+      _snack('Hủy đơn thất bại: $e');
+    }
+  }
+
   Color _statusColor(BookingStatus s) => switch (s) {
     BookingStatus.pending => AppColors.orange,
     BookingStatus.delivered => AppColors.blue,
     BookingStatus.returned => AppColors.green,
+    BookingStatus.cancelled => AppColors.red,
   };
 
   @override
   Widget build(BuildContext context) {
     final p = context.watch<BookingProvider>();
     final q = _search.text.trim().toLowerCase();
-    // Cửa sổ thời gian theo ngày giao (hoặc ngày tạo nếu chưa có ngày giao)
     final start = _range?.start ?? _defaultStart;
     final end = _range == null
-        ? null // mặc định không chặn phía sau: vẫn thấy các đơn sắp giao
+        ? null
         : DateTime(
             _range!.end.year,
             _range!.end.month,
@@ -221,7 +281,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
                       itemCount: list.length,
-                      // Khóa theo mã đơn: khi lọc / tải lại, Flutter ghép đúng thẻ cũ với thẻ mới
                       findChildIndexCallback: (key) {
                         final id = (key as ValueKey<String>).value;
                         final index = list.indexWhere((b) => b.id == id);
@@ -242,7 +301,6 @@ class _BookingListScreenState extends State<BookingListScreen> {
   static String _d(DateTime x) =>
       '${x.day.toString().padLeft(2, '0')}/${x.month.toString().padLeft(2, '0')}/${x.year}';
 
-  /// Dòng cho biết đang xem khoảng thời gian nào + số đơn + nút đặt lại.
   Widget _rangeInfo(int count) {
     final text = _range == null
         ? '30 ngày gần đây (từ ${_d(_defaultStart)}) · $count đơn'
@@ -321,6 +379,8 @@ class _BookingListScreenState extends State<BookingListScreen> {
     final services = b.services
         .map((s) => s.qty > 1 ? '${s.name} ×${s.qty}' : s.name)
         .join(', ');
+    final isCancelled = b.status == BookingStatus.cancelled;
+
     return Card(
       color: AppColors.surface,
       margin: const EdgeInsets.only(bottom: 12),
@@ -341,8 +401,8 @@ class _BookingListScreenState extends State<BookingListScreen> {
                   Expanded(
                     child: Text(
                       'Mã: #${b.id}',
-                      style: const TextStyle(
-                        color: AppColors.blue,
+                      style: TextStyle(
+                        color: isCancelled ? AppColors.red : AppColors.blue,
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                       ),
@@ -377,38 +437,55 @@ class _BookingListScreenState extends State<BookingListScreen> {
                 Icons.event_outlined,
                 'Hạn thu: ${Fmt.dateTime(b.collectTime)}',
               ),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.account_balance_wallet_outlined,
-                    size: 20,
-                    color: AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text:
-                                'Công nợ: ${Fmt.money(b.debtAmount < 0 ? 0 : b.debtAmount)} / ',
-                          ),
-                          TextSpan(
-                            text: b.pendingToCompany > 0
-                                ? 'Chưa nộp cty ${Fmt.money(b.pendingToCompany)}'
-                                : 'Đã nộp cty',
-                            style: TextStyle(
-                              color: b.pendingToCompany > 0
-                                  ? AppColors.orange
-                                  : AppColors.green,
-                            ),
-                          ),
-                        ],
+              if (isCancelled && b.cancelReason.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.cancel_outlined, size: 20, color: AppColors.red),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Lý do hủy: ${b.cancelReason}',
+                        style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w600),
                       ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ] else if (!isCancelled) ...[
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 20,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  'Công nợ: ${Fmt.money(b.debtAmount < 0 ? 0 : b.debtAmount)} / ',
+                            ),
+                            TextSpan(
+                              text: b.pendingToCompany > 0
+                                  ? 'Chưa nộp cty ${Fmt.money(b.pendingToCompany)}'
+                                  : 'Đã nộp cty',
+                              style: TextStyle(
+                                color: b.pendingToCompany > 0
+                                    ? AppColors.orange
+                                    : AppColors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 6),
               Row(
                 children: [
@@ -453,15 +530,23 @@ class _BookingListScreenState extends State<BookingListScreen> {
                     ],
                   ),
                   const Spacer(),
-                  if (b.status != BookingStatus.returned)
+                  if (b.status == BookingStatus.pending) ...[
+                    IconButton(
+                      tooltip: 'Hủy đơn hàng',
+                      icon: const Icon(Icons.cancel_outlined, color: AppColors.red),
+                      onPressed: () => _cancelBookingDialog(b),
+                    ),
+                    const SizedBox(width: 4),
                     FilledButton.tonalIcon(
                       onPressed: () => _openForStatus(b),
                       icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                      label: Text(
-                        b.status == BookingStatus.pending
-                            ? 'Giao loa'
-                            : 'Thu loa',
-                      ),
+                      label: const Text('Giao loa'),
+                    ),
+                  ] else if (b.status == BookingStatus.delivered)
+                    FilledButton.tonalIcon(
+                      onPressed: () => _openForStatus(b),
+                      icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                      label: const Text('Thu loa'),
                     ),
                 ],
               ),
@@ -491,7 +576,7 @@ class _AdvancedFilter {
   const _AdvancedFilter(this.range, this.debtOnly, this.staff);
 }
 
-/// Tìm nâng cao: chọn khoảng thời gian (để xem đơn cũ hơn 30 ngày), chỉ đơn còn nợ, nhân viên.
+/// Tìm nâng cao: chọn khoảng thời gian, chỉ đơn còn nợ, nhân viên.
 class _AdvancedFilterSheet extends StatefulWidget {
   final _AdvancedFilter initial;
   final bool showStaff;
@@ -513,7 +598,6 @@ class _AdvancedFilterSheetState extends State<_AdvancedFilterSheet> {
   static String _d(DateTime x) =>
       '${x.day.toString().padLeft(2, '0')}/${x.month.toString().padLeft(2, '0')}/${x.year}';
 
-  /// Khoảng từ [months] tháng trước đến hôm nay.
   void _lastMonths(int months) {
     final t = _today;
     setState(

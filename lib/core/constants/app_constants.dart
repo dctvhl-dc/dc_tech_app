@@ -21,7 +21,7 @@ class SheetSchema {
       'service_time', 'install_time', 'collect_time', 'location_text',
       'gps_location', 'map_link', 'note', 'total_cost', 'paid_amount', 'submitted_to_company',
       'debt_amount', 'require_invoice', 'invoice_info', 'status',
-      'assigned_user', 'created_by', 'updated_by', 'updated_at',
+      'assigned_user', 'created_by', 'updated_by', 'updated_at', 'cancel_reason',
     ],
     // Dạng key/value: company_name, hotline, ...
     SheetNames.settings: ['key', 'value'],
@@ -75,6 +75,7 @@ class SheetSchema {
       'created_by': ['người tạo'],
       'updated_by': ['người cập nhật'],
       'updated_at': ['cập nhật lúc'],
+      'cancel_reason': ['lý do hủy', 'lý do huỷ', 'nguyên nhân hủy', 'nguyên nhân huỷ'],
     },
   };
 }

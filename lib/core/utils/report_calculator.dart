@@ -67,20 +67,22 @@ class ReportCalculator {
 
   static ReportSummary summarize(List<Booking> list) {
     var revenue = 0, paid = 0, debt = 0, submitted = 0, holding = 0;
-    for (final b in list) {
+    final active = list.where((b) => b.status != BookingStatus.cancelled).toList();
+    for (final b in active) {
       revenue += b.totalCost;
       paid += b.paidAmount;
       debt += _pos(b.debtAmount);
       submitted += b.submittedToCompany;
       holding += _pos(b.pendingToCompany);
     }
-    return ReportSummary(list.length, revenue, paid, debt, submitted, holding);
+    return ReportSummary(active.length, revenue, paid, debt, submitted, holding);
   }
 
   /// Xếp hạng nhân viên theo doanh thu giảm dần + thống kê số lần giao/thu loa.
   static List<UserStat> rankByUser(List<Booking> list) {
+    final active = list.where((b) => b.status != BookingStatus.cancelled).toList();
     final map = <String, List<Booking>>{};
-    for (final b in list) {
+    for (final b in active) {
       map.putIfAbsent(b.assignedUser.isEmpty ? '(chưa gán)' : b.assignedUser, () => []).add(b);
     }
     final out = [
@@ -90,7 +92,7 @@ class ReportCalculator {
           e.value.length,
           e.value.fold<int>(0, (s, b) => s + b.totalCost),
           e.value.fold<int>(0, (s, b) => s + _pos(b.debtAmount)),
-          deliveryCount: e.value.where((b) => b.status == BookingStatus.delivered || b.status == BookingStatus.returned || b.installTime != null).length,
+          deliveryCount: e.value.where((b) => b.status == BookingStatus.delivered || b.status == BookingStatus.returned).length,
           collectionCount: e.value.where((b) => b.status == BookingStatus.returned).length,
         )
     ];

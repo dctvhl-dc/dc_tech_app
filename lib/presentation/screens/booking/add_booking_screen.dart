@@ -20,11 +20,6 @@ import '../../../providers/user_provider.dart';
 import '../slip/slip_screen.dart';
 
 /// Màn hình Tạo / Sửa đơn hàng.
-/// - Tạo mới: `AddBookingScreen()`
-/// - Sửa:     `AddBookingScreen(booking: existing)`
-/// - Giao / thu loa: `AddBookingScreen(booking: b, presetStatus: ...)` -> mở sẵn
-///   trạng thái mới và cuộn tới phần chụp ảnh.
-/// Trả về `true` qua Navigator.pop khi lưu thành công (để màn danh sách refresh).
 class AddBookingScreen extends StatefulWidget {
   final Booking? booking;
   final Booking? copyFrom;
@@ -70,6 +65,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
   final _gps = TextEditingController();
   final _note = TextEditingController();
   final _invoiceInfo = TextEditingController();
+  final _cancelReason = TextEditingController();
   final _total = TextEditingController();
   final _paid = TextEditingController();
   final _submitted = TextEditingController();
@@ -93,7 +89,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
   bool get _canCapture => Platform.isAndroid || Platform.isIOS;
 
   /// Công nợ = Tổng - Đã thanh toán (tính realtime, chỉ hiển thị, không nhập).
-  int get _debt => Fmt.parseMoney(_total.text) - Fmt.parseMoney(_paid.text);
+  int get _debt => _status == BookingStatus.cancelled ? 0 : Fmt.parseMoney(_total.text) - Fmt.parseMoney(_paid.text);
 
   @override
   void initState() {
@@ -109,6 +105,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
       _gps.text = b.gpsLocation;
       _note.text = b.note;
       _invoiceInfo.text = b.invoiceInfo;
+      _cancelReason.text = b.cancelReason;
       _total.text = b.totalCost == 0 ? '' : Fmt.thousands(b.totalCost);
       _paid.text = b.paidAmount == 0 ? '' : Fmt.thousands(b.paidAmount);
       _submitted.text = b.submittedToCompany == 0 ? '' : Fmt.thousands(b.submittedToCompany);
@@ -142,7 +139,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
 
   @override
   void dispose() {
-    for (final c in [_name, _phone, _address, _mapLink, _gps, _note, _invoiceInfo, _total, _paid, _submitted]) {
+    for (final c in [_name, _phone, _address, _mapLink, _gps, _note, _invoiceInfo, _cancelReason, _total, _paid, _submitted]) {
       c.dispose();
     }
     for (final l in _lines) {
@@ -198,7 +195,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     await _extractCoords();
   }
 
-  /// Từ link khách gửi -> toạ độ (link rút gọn sẽ được mở rộng qua mạng).
+  /// Từ link khách gửi -> toạ độ.
   Future<void> _extractCoords() async {
     final raw = _mapLink.text.trim();
     if (raw.isEmpty) {
@@ -209,14 +206,13 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     try {
       final c = await MapLink.toCoords(raw);
       if (c == null) {
-        _snack('Không đọc được toạ độ từ link này. Bấm "Mở bản đồ" để kiểm tra, '
-            'hoặc nhờ khách gửi lại link ghim vị trí.');
+        _snack('Không đọc được toạ độ từ link này. Bấm "Mở bản đồ" để kiểm tra.');
       } else {
         _gps.text = c.text;
         _snack('Đã lấy toạ độ khách: ${c.text}', error: false);
       }
     } catch (e) {
-      _snack('Không truy cập được link (kiểm tra mạng): $e');
+      _snack('Không truy cập được link: $e');
     } finally {
       if (mounted) setState(() => _resolving = false);
     }
@@ -248,8 +244,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     }
   }
 
-  /// Chụp / chọn ảnh. image_picker tự thu nhỏ + nén JPEG trên điện thoại
-  /// (640px, chất lượng 50) để ảnh đủ nhỏ lưu trong Google Sheets.
   Future<void> _addPhoto(PhotoType type, ImageSource source) async {
     final user = context.read<AuthProvider>().currentUser!;
     try {
@@ -335,13 +329,11 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
           ))
       .toList();
 
-  /// Đọc TẤT CẢ đơn (kể cả của người khác) rồi tính số thiết bị còn trống
-  /// trong khoảng [giao, thu hồi] của đơn này.
   Future<List<StockConflict>> _findConflicts(List<BookingServiceItem> lines, BookingProvider provider) async {
     final start = _installTime, end = _collectTime;
     if (start == null || end == null) return [];
     final catalog = context.read<ServiceProvider>();
-    await catalog.load(); // danh mục (có cache trong phiên)
+    await catalog.load();
     final all = await provider.fetchAll();
     return AvailabilityChecker.check(
       start: start,
@@ -353,8 +345,8 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     );
   }
 
-  /// true = được phép lưu (không trùng, hoặc người dùng chọn "Vẫn lưu").
   Future<bool> _confirmStock(List<BookingServiceItem> lines, BookingProvider provider) async {
+    if (_status == BookingStatus.cancelled) return true; // Đơn hủy không cần check kho
     List<StockConflict> conflicts;
     try {
       conflicts = await _findConflicts(lines, provider);
@@ -413,7 +405,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
       _snack(
         c.isEmpty
             ? 'Thiết bị còn đủ trong khoảng thời gian này.'
-            : 'Có ${c.length} thiết bị bị trùng lịch: ${c.map((x) => x.service.name).join(', ')}. Bấm Lưu để xem chi tiết.',
+            : 'Có ${c.length} thiết bị bị trùng lịch: ${c.map((x) => x.service.name).join(', ')}.',
         error: c.isNotEmpty,
       );
     } catch (e) {
@@ -425,6 +417,77 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     final b = widget.booking ?? _saved;
     if (b == null) return;
     Navigator.push(context, MaterialPageRoute(builder: (_) => SlipScreen(booking: b, kind: kind)));
+  }
+
+  // ───── Thao tác Hủy đơn hàng ─────
+
+  Future<void> _cancelBookingAction() async {
+    final b = widget.booking ?? _saved;
+    if (b == null) return;
+    if (b.status != BookingStatus.pending) {
+      _snack('Chỉ có thể hủy đơn hàng chưa giao.');
+      return;
+    }
+
+    final reasonCtrl = TextEditingController();
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: AppColors.red),
+            SizedBox(width: 8),
+            Text('Hủy đơn hàng'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bạn có chắc chắn muốn hủy đơn hàng #${b.id}?'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reasonCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Lý do hủy đơn',
+                hintText: 'Nhập lý do khách hủy / trùng lịch...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Quay lại')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Xác nhận Hủy'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+    final reason = reasonCtrl.text.trim();
+    if (reason.isEmpty) {
+      _snack('Vui lòng nhập lý do hủy đơn');
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final provider = context.read<BookingProvider>();
+    setState(() => _saving = true);
+    try {
+      await provider.cancelBooking(b, reason, auth.currentUser!.username);
+      if (!mounted) return;
+      _snack('Đã hủy đơn hàng #${b.id}', error: false);
+      Navigator.pop(context, true);
+    } catch (e) {
+      _snack('Hủy đơn thất bại: $e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   // ───── Lưu ─────
@@ -440,25 +503,25 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
       return _snack('Thời gian thu hồi phải sau thời gian giao');
     }
 
+    if (_status == BookingStatus.cancelled && _cancelReason.text.trim().isEmpty) {
+      return _snack('Vui lòng nhập lý do hủy đơn');
+    }
+
     final total = Fmt.parseMoney(_total.text);
     final paid = Fmt.parseMoney(_paid.text);
     final submitted = Fmt.parseMoney(_submitted.text);
-    if (paid > total) return _snack('Số tiền đã thanh toán không được lớn hơn tổng chi phí');
-    if (submitted > paid) return _snack('Số tiền đã nộp cty không được lớn hơn số đã thu');
 
-    final auth = context.read<AuthProvider>(); // lấy trước khi await
+    final auth = context.read<AuthProvider>();
     final provider = context.read<BookingProvider>();
     setState(() => _saving = true);
 
     Booking? booking;
     try {
-      // Cảnh báo trùng lịch / thiếu thiết bị (người dùng có thể chọn vẫn lưu)
       if (!await _confirmStock(services, provider)) {
         if (mounted) setState(() => _saving = false);
         return;
       }
 
-      // Có link mà chưa có toạ độ -> thử tự lấy (không chặn việc lưu nếu lỗi)
       if (_mapLink.text.trim().isNotEmpty && _gps.text.trim().isEmpty) {
         try {
           final c = await MapLink.toCoords(_mapLink.text).timeout(const Duration(seconds: 12));
@@ -490,6 +553,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
         createdBy: old == null ? auth.currentUser!.username : old.createdBy,
         updatedBy: auth.currentUser!.username,
         updatedAt: DateTime.now(),
+        cancelReason: _cancelReason.text.trim(),
       );
       await provider.save(booking, isNew: old == null);
       _saved = booking;
@@ -499,7 +563,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
       return;
     }
 
-    // Tải ảnh đang chờ lên Sheet (đơn đã lưu xong, có mã đơn)
     try {
       for (final p in List<BookingPhoto>.from(_pending)) {
         final uploaded = p.withBooking(booking.id);
@@ -511,7 +574,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
         });
       }
     } catch (e) {
-      _snack('Đã lưu đơn ${booking.id} nhưng tải ảnh thất bại: $e\nBấm Lưu để thử lại.');
+      _snack('Đã lưu đơn ${booking.id} nhưng tải ảnh thất bại: $e');
       if (mounted) setState(() => _saving = false);
       return;
     }
@@ -546,6 +609,32 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
+            if (_status == BookingStatus.cancelled)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.red.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.red),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.cancel_outlined, color: AppColors.red, size: 20),
+                        SizedBox(width: 8),
+                        Text('ĐƠN HÀNG ĐÃ HỦY', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                    if (_cancelReason.text.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text('Lý do hủy: ${_cancelReason.text}', style: const TextStyle(color: Colors.white, height: 1.3)),
+                    ],
+                  ],
+                ),
+              ),
             if (_isCopy)
               Container(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -555,7 +644,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  'Đang sao chép đơn #${widget.copyFrom!.id}. Thông tin đơn có thể chỉnh sửa; ảnh giao và thu hồi cần bổ sung riêng cho đơn mới.',
+                  'Đang sao chép đơn #${widget.copyFrom!.id}. Thông tin đơn có thể chỉnh sửa.',
                   style: const TextStyle(height: 1.4),
                 ),
               ),
@@ -620,11 +709,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                     onPressed: _pasteLink,
                   ),
                 ),
-                validator: (v) {
-                  final s = (v ?? '').trim();
-                  if (s.isEmpty) return null;
-                  return (s.contains('http') || MapLink.parseCoords(s) != null) ? null : 'Link không hợp lệ';
-                },
               ),
               const SizedBox(height: 10),
               Row(children: [
@@ -660,11 +744,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                     const Icon(Icons.pin_drop_outlined, size: 20, color: AppColors.green),
                     const SizedBox(width: 8),
                     Expanded(child: SelectableText('Toạ độ khách: ${_gps.text}')),
-                    IconButton(
-                      tooltip: 'Sao chép toạ độ',
-                      icon: const Icon(Icons.copy, size: 18),
-                      onPressed: () => Clipboard.setData(ClipboardData(text: _gps.text)),
-                    ),
                   ]),
                 ),
             ]),
@@ -747,11 +826,35 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                   items: [for (final s in BookingStatus.values) DropdownMenuItem(value: s, child: Text(s.label))],
                   onChanged: (v) => setState(() => _status = v ?? _status),
                 ),
+              if (_status == BookingStatus.cancelled) ...[
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _cancelReason,
+                  decoration: const InputDecoration(
+                    labelText: 'Lý do hủy đơn',
+                    prefixIcon: Icon(Icons.cancel_outlined, color: AppColors.red),
+                  ),
+                ),
+              ],
               if ((_isEdit || _isCopy) && canAssign) const SizedBox(height: 12),
               if (canAssign) _assigneeDropdown(),
+              if ((_isEdit || _saved != null) && _status == BookingStatus.pending) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _saving ? null : _cancelBookingAction,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.red,
+                    side: const BorderSide(color: AppColors.red),
+                    minimumSize: const Size.fromHeight(48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('HỦY ĐƠN HÀNG NÀY', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ],
             ]),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             FilledButton(
               onPressed: _saving ? null : _save,
               child: _saving
@@ -785,7 +888,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
         ]),
       );
 
-  /// 1 nhóm ảnh (giao hoặc thu hồi): ảnh đã lưu + ảnh chờ tải + nút thêm.
   Widget _photoGroup(PhotoType type) {
     final saved = _photos.where((p) => p.type == type).toList();
     final pending = _pending.where((p) => p.type == type).toList();
@@ -880,8 +982,6 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
         ),
       );
 
-  /// 1 dòng dịch vụ: gõ tay tên + giá, hoặc bấm mũi tên để chọn từ danh mục.
-  /// Sau khi chọn vẫn sửa được cả tên lẫn giá.
   Widget _serviceRow(int i, List<RentalService> catalog) {
     final line = _lines[i];
     return Padding(
@@ -891,7 +991,7 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
           flex: 3,
           child: TextFormField(
             controller: line.name,
-            onChanged: (_) => line.serviceId = null, // gõ tay -> bỏ liên kết danh mục
+            onChanged: (_) => line.serviceId = null,
             decoration: InputDecoration(
               labelText: 'Thiết bị / dịch vụ',
               suffixIcon: PopupMenuButton<RentalService>(
@@ -899,8 +999,8 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
                 icon: const Icon(Icons.arrow_drop_down),
                 enabled: catalog.isNotEmpty,
                 onSelected: (s) {
-                  line.name.text = s.name; // điền tên + load giá từ danh mục
-                  line.serviceId = s.id; // liên kết để kiểm tra tồn kho
+                  line.name.text = s.name;
+                  line.serviceId = s.id;
                   line.price.text = Fmt.thousands(s.price);
                   _recalcTotal();
                   setState(() {});
@@ -995,10 +1095,8 @@ class _AddBookingScreenState extends State<AddBookingScreen> {
     );
   }
 
-  /// Admin/Super Admin chọn nhân viên phụ trách đơn.
   Widget _assigneeDropdown() {
     final users = context.watch<UserProvider>().users.where((u) => u.isActive).toList();
-    // Tránh lỗi Dropdown khi value không có trong items (đang tải)
     final value = users.any((u) => u.username == _assignedUser) ? _assignedUser : null;
     return DropdownButtonFormField<String>(
       // ignore: deprecated_member_use

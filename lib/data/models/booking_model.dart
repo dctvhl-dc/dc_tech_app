@@ -4,7 +4,8 @@ import 'dart:convert';
 enum BookingStatus {
   pending('Chưa giao'),
   delivered('Đã giao loa'),
-  returned('Đã trả loa');
+  returned('Đã trả loa'),
+  cancelled('Đã hủy');
 
   final String label;
   const BookingStatus(this.label);
@@ -80,6 +81,7 @@ class Booking {
   final String createdBy; // username người tạo đơn
   final String updatedBy; // username người cập nhật gần nhất
   final DateTime? updatedAt;
+  final String cancelReason; // lý do hủy đơn (nếu đã hủy)
 
   const Booking({
     required this.id,
@@ -104,19 +106,23 @@ class Booking {
     this.createdBy = '',
     this.updatedBy = '',
     this.updatedAt,
+    this.cancelReason = '',
   });
 
   /// Công nợ = Tổng - Đã thanh toán. KHÔNG nhận từ ngoài: luôn tự tính.
-  int get debtAmount => totalCost - paidAmount;
+  int get debtAmount => status == BookingStatus.cancelled ? 0 : totalCost - paidAmount;
 
   /// Tiền nhân viên đang giữ, chưa nộp cty.
   int get pendingToCompany => paidAmount - submittedToCompany;
 
-  /// Dùng cho thao tác nhanh: User bấm "Giao loa" / "Thu loa".
+  /// Dùng cho thao tác nhanh: User bấm "Giao loa" / "Thu loa" / "Hủy đơn".
   Booking copyWith({
     BookingStatus? status,
     int? paidAmount,
     int? submittedToCompany,
+    String? cancelReason,
+    String? updatedBy,
+    DateTime? updatedAt,
   }) =>
       Booking(
         id: id,
@@ -139,8 +145,9 @@ class Booking {
         status: status ?? this.status,
         assignedUser: assignedUser,
         createdBy: createdBy,
-        updatedBy: updatedBy,
-        updatedAt: updatedAt,
+        updatedBy: updatedBy ?? this.updatedBy,
+        updatedAt: updatedAt ?? this.updatedAt,
+        cancelReason: cancelReason ?? this.cancelReason,
       );
 
   static int _int(String? s) =>
@@ -173,6 +180,7 @@ class Booking {
         createdBy: m['created_by'] ?? '',
         updatedBy: m['updated_by'] ?? '',
         updatedAt: _dt(m['updated_at']),
+        cancelReason: m['cancel_reason'] ?? '',
       );
 
   /// Mọi value đều là String để Google Sheets không tự đổi kiểu.
@@ -201,5 +209,6 @@ class Booking {
         'created_by': createdBy,
         'updated_by': updatedBy,
         'updated_at': updatedAt?.toIso8601String() ?? '',
+        'cancel_reason': cancelReason,
       };
 }
