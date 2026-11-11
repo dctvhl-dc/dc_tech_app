@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,7 +26,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _showDelivery = true;
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
+  }
 
   void _snack(String msg) {
     if (!mounted) return;
@@ -227,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () => _open(t),
         child: IntrinsicHeight(
           child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Container(width: 5, color: color), // vạch màu theo trạng thái
+            Container(width: 5, color: color),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),

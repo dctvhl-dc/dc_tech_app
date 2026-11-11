@@ -1,8 +1,9 @@
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -62,8 +63,8 @@ class _ReportScreenState extends State<ReportScreen> {
     final fileName = 'BaoCao_$tag${_username == null ? '' : '_$_username'}.xlsx';
     try {
       String? path;
-      if (Platform.isAndroid || Platform.isIOS) {
-        // Mobile: file_picker tự ghi bytes vào nơi người dùng chọn
+      if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
+        // Mobile / Web: file_picker tự ghi bytes hoặc tải xuống qua browser
         path = await FilePicker.platform
             .saveFile(dialogTitle: 'Lưu báo cáo', fileName: fileName, bytes: bytes);
       } else {
@@ -217,7 +218,7 @@ class _ReportScreenState extends State<ReportScreen> {
                 s.debt,
                 AppColors.orange,
                 Icons.warning_amber_rounded,
-                // Cùng bộ lọc (kỳ + nhân viên) đang xem trên báo cáo
+                caption: 'xem công nợ',
                 onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -365,8 +366,9 @@ class _Stat extends StatelessWidget {
   final int value;
   final Color color;
   final IconData icon;
-  final VoidCallback? onTap; // có -> ô bấm được (hiện chữ gợi ý)
-  const _Stat(this.label, this.value, this.color, this.icon, {this.onTap});
+  final String? caption;
+  final VoidCallback? onTap;
+  const _Stat(this.label, this.value, this.color, this.icon, {this.caption, this.onTap});
 
   @override
   Widget build(BuildContext context) => Expanded(
@@ -389,7 +391,9 @@ class _Stat extends StatelessWidget {
                     fit: BoxFit.scaleDown,
                     child: Text(Fmt.money(value), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                   ),
-                  if (onTap != null)
+                  if (caption != null)
+                    Text(caption!, style: TextStyle(fontSize: 10, color: color))
+                  else if (onTap != null)
                     Text('Bấm xem đơn', style: TextStyle(fontSize: 10, color: color)),
                 ]),
               ),
@@ -414,7 +418,7 @@ class _Legend extends StatelessWidget {
       ]);
 }
 
-/// Biểu đồ vành khuyên tự vẽ (không cần thêm package).
+/// Biểu đồ vành khuyên tự vẽ.
 class _DonutPainter extends CustomPainter {
   final List<double> values;
   final List<Color> colors;
@@ -427,7 +431,6 @@ class _DonutPainter extends CustomPainter {
     final total = values.fold<double>(0, (a, b) => a + b);
 
     if (total <= 0) {
-      // Chưa có dữ liệu: vẽ vòng xám
       canvas.drawArc(
         rect, 0, math.pi * 2, false,
         Paint()
@@ -439,7 +442,7 @@ class _DonutPainter extends CustomPainter {
     }
 
     final visible = values.where((v) => v > 0).length;
-    final gap = visible > 1 ? 0.04 : 0.0; // khe hở giữa các phần
+    final gap = visible > 1 ? 0.04 : 0.0;
     var start = -math.pi / 2;
     for (var i = 0; i < values.length; i++) {
       if (values[i] <= 0) continue;

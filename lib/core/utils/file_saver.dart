@@ -2,8 +2,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
-/// Lưu file qua hộp thoại "Lưu thành..." (Android + Windows).
+/// Lưu file qua hộp thoại "Lưu thành..." (Web + Android + Windows).
 class FileSaver {
   /// Trả về đường dẫn đã lưu, hoặc null nếu người dùng hủy.
   static Future<String?> save({
@@ -11,8 +12,7 @@ class FileSaver {
     required Uint8List bytes,
     required List<String> extensions, // vd ['pdf']
   }) async {
-    if (Platform.isAndroid || Platform.isIOS) {
-      // Mobile: file_picker tự ghi bytes vào nơi người dùng chọn
+    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
       return FilePicker.platform.saveFile(dialogTitle: 'Lưu file', fileName: fileName, bytes: bytes);
     }
     // Desktop: chỉ trả về đường dẫn, ta tự ghi file

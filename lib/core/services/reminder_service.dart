@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
@@ -7,7 +8,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../data/models/booking_model.dart';
 import '../utils/local_config_storage.dart';
 
-/// Một lời nhắc hiển thị trong app (dùng cho Windows, nơi chưa có thông báo hệ thống).
+/// Một lời nhắc hiển thị trong app (dùng cho Web/Windows, nơi chưa có thông báo hệ thống).
 class UpcomingReminder {
   final String key; // duy nhất cho mỗi sự kiện -> mỗi lời nhắc chỉ hiện 1 lần
   final String title;
@@ -16,9 +17,6 @@ class UpcomingReminder {
 }
 
 /// Nhắc lịch giao / thu hồi loa.
-///  - Android: LÊN LỊCH thông báo hệ thống bằng Báo thức báo thức (AlarmClock) để hiện
-///    chính xác kể cả khi điện thoại tắt màn hình, vào Doze mode hay ở chế độ tiết kiệm pin.
-///  - Windows: app tự nhắc bằng thông báo trong app khi đang mở (xem MainShell).
 class ReminderService {
   ReminderService._();
   static final ReminderService instance = ReminderService._();
@@ -28,7 +26,7 @@ class ReminderService {
   bool enabled = true;
   int leadMinutes = 60; // nhắc trước bao nhiêu phút
 
-  static bool get supportsSystemNotifications => Platform.isAndroid || Platform.isIOS;
+  static bool get supportsSystemNotifications => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   Future<void> init() async {
     try {
@@ -55,8 +53,7 @@ class ReminderService {
         ),
       );
 
-      // Android: hỏi quyền & tạo Kênh thông báo độ ưu tiên cao nhất
-      if (Platform.isAndroid) {
+      if (!kIsWeb && Platform.isAndroid) {
         final androidImpl = _plugin.resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>();
         if (androidImpl != null) {
@@ -86,9 +83,8 @@ class ReminderService {
     }
   }
 
-  /// Yêu cầu cấp quyền Báo thức chính xác trên Android (an toàn, không bắn ngoại lệ).
   Future<bool?> requestExactAlarmsPermission() async {
-    if (!Platform.isAndroid) return true;
+    if (kIsWeb || !Platform.isAndroid) return true;
     try {
       final androidImpl = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
@@ -98,7 +94,6 @@ class ReminderService {
     }
   }
 
-  /// Gửi thông báo thử nghiệm ngay lập tức để kiểm tra hệ thống thông báo.
   Future<void> showTestNotification() async {
     if (!_ready || !supportsSystemNotifications) return;
     try {
@@ -142,9 +137,6 @@ class ReminderService {
     return '${b.customerName} · ${b.customerPhone}\n$s';
   }
 
-  /// Các sự kiện cần nhắc của đơn hàng:
-  /// - Giao loa: nếu đơn chưa giao (pending) và có giờ giao.
-  /// - Thu hồi loa: nếu đơn chưa hoàn tất trả (chưa returned) và có giờ thu hồi.
   static List<(bool, DateTime)> _events(Booking b) => [
         if (b.status == BookingStatus.pending && b.installTime != null) (true, b.installTime!),
         if (b.status != BookingStatus.returned && b.collectTime != null) (false, b.collectTime!),
@@ -153,9 +145,8 @@ class ReminderService {
   static int _id(String bookingId, bool delivery, bool isExact) =>
       ((bookingId.hashCode & 0x1fffffff) * 4) + (delivery ? 0 : 1) + (isExact ? 2 : 0);
 
-  /// Đặt lại toàn bộ lịch nhắc theo danh sách đơn hiện tại.
   Future<void> sync(List<Booking> bookings) async {
-    if (!_ready) return;
+    if (!_ready || kIsWeb) return;
     try {
       try {
         await _plugin.cancelAll();
@@ -170,7 +161,6 @@ class ReminderService {
         for (final (isDelivery, time) in _events(b)) {
           if (!time.isAfter(now) || time.isAfter(horizon) || count >= 60) continue;
 
-          // 1. Nhắc trước (Lead time)
           final leadTime = time.subtract(Duration(minutes: leadMinutes));
           final targetLeadTime = leadTime.isAfter(now) ? leadTime : now.add(const Duration(seconds: 10));
 
@@ -181,7 +171,6 @@ class ReminderService {
             scheduledDate: targetLeadTime,
           );
 
-          // 2. Nhắc ĐÚNG GIỜ giao / thu hồi
           await _scheduleSingle(
             id: _id(b.id, isDelivery, true),
             title: isDelivery ? 'ĐÃ TỚI GIỜ GIAO LOA · ${_hm(time)}' : 'ĐÃ TỚI GIỜ THU HỒI LOA · ${_hm(time)}',
@@ -192,9 +181,7 @@ class ReminderService {
           count++;
         }
       }
-    } catch (_) {
-      // Đảm bảo không để bất kỳ lỗi nào làm gián đoạn app
-    }
+    } catch (_) {}
   }
 
   Future<void> _scheduleSingle({
@@ -203,8 +190,8 @@ class ReminderService {
     required String body,
     required DateTime scheduledDate,
   }) async {
+    if (kIsWeb) return;
     final now = DateTime.now();
-    // Bắt buộc thời gian đặt lịch phải ở tương lai
     if (!scheduledDate.isAfter(now)) return;
 
     final tzWhen = tz.TZDateTime.from(scheduledDate, tz.local);
@@ -226,7 +213,6 @@ class ReminderService {
       ),
     );
 
-    // Dùng chế độ AlarmClock trước (chế độ báo thức chuẩn Android - vượt Doze/Tiết kiệm pin)
     try {
       await _plugin.zonedSchedule(
         id,
@@ -267,7 +253,6 @@ class ReminderService {
     }
   }
 
-  /// Các việc sắp tới giờ trong [leadMinutes] phút tới (hoặc vừa quá giờ dưới 30 phút).
   List<UpcomingReminder> upcoming(List<Booking> bookings, DateTime now) {
     if (!enabled) return const [];
     final out = <UpcomingReminder>[];

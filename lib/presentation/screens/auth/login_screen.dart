@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/local_config_storage.dart';
 import '../../../providers/auth_provider.dart';
 import '../../widgets/app_logo.dart';
+import '../settings/api_config_screen.dart';
 import 'forgot_password_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -115,8 +116,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: const Text('Quên mật khẩu?',
                       style: TextStyle(color: AppColors.orange, fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ApiConfigScreen()),
+                  ),
+                  icon: const Icon(Icons.cloud_sync_outlined, size: 18),
+                  label: const Text('Cấu hình kết nối Google Sheets (API)'),
+                ),
                 const SizedBox(height: 20),
-                const Text('Phiên bản 1.0.0', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                const Text('Phiên bản 1.0.4', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               ]),
             ),
           ),

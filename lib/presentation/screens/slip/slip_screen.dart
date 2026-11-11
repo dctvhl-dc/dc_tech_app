@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -29,7 +30,7 @@ class _SlipScreenState extends State<SlipScreen> {
   SlipResult? _res;
   String? _error;
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   String get _base => '${widget.kind.filePrefix}_${widget.booking.id}';
 
   @override
@@ -112,11 +113,10 @@ class _SlipScreenState extends State<SlipScreen> {
     }
   }
 
-  /// Mobile: chia sẻ qua Zalo, email, ... (ảnh phù hợp để gửi Zalo, PDF để in).
+  /// Mobile: chia sẻ qua Zalo, email, ...
   Future<void> _share(bool pdf) async {
     final r = _res!;
     final name = '$_base.${pdf ? 'pdf' : 'png'}';
-    // iPad bắt buộc có vị trí neo cho bảng chia sẻ; các máy khác bỏ qua
     final box = context.findRenderObject() as RenderBox?;
     final origin = box == null ? null : box.localToGlobal(Offset.zero) & box.size;
     try {
@@ -131,9 +131,13 @@ class _SlipScreenState extends State<SlipScreen> {
     }
   }
 
-  /// Desktop: ghi PDF tạm rồi mở bằng trình xem PDF mặc định để in (Ctrl+P).
+  /// Desktop/Web: ghi PDF tạm hoặc tải xuống PDF để in (Ctrl+P).
   Future<void> _openToPrint() async {
     try {
+      if (kIsWeb) {
+        await _save(true);
+        return;
+      }
       final file = File('${Directory.systemTemp.path}${Platform.pathSeparator}$_base.pdf');
       await file.writeAsBytes(_res!.pdf);
       if (!await launchUrl(Uri.file(file.path))) _snack('Không mở được trình xem PDF.', error: true);
@@ -178,7 +182,7 @@ class _SlipScreenState extends State<SlipScreen> {
                       ],
                       child: IgnorePointer(
                         child: FilledButton.icon(
-                          onPressed: () {}, // chỉ để nút hiện đúng màu; chạm sẽ mở menu
+                          onPressed: () {},
                           style: FilledButton.styleFrom(minimumSize: const Size(150, 48)),
                           icon: const Icon(Icons.share),
                           label: const Text('Chia sẻ'),

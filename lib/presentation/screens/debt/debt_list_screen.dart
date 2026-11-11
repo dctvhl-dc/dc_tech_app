@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -13,8 +14,6 @@ import '../../../providers/user_provider.dart';
 import '../booking/add_booking_screen.dart';
 
 /// Danh sách các đơn còn công nợ (bấm vào ô "Công nợ" ở Trang chủ / Báo cáo).
-/// [select] nhận toàn bộ đơn đang tải và trả về các đơn cần hiển thị — màn hình tự cập nhật
-/// khi dữ liệu đổi (vd: sau khi sửa đơn xong số tiền đã thanh toán).
 class DebtListScreen extends StatefulWidget {
   final String title;
   final List<Booking> Function(List<Booking> all) select;
@@ -27,7 +26,7 @@ class DebtListScreen extends StatefulWidget {
 class _DebtListScreenState extends State<DebtListScreen> {
   final _search = TextEditingController();
 
-  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   @override
   void dispose() {
