@@ -27,16 +27,13 @@ jobs:
           cache: true
 
       - name: Install Flutter Dependencies
-        run: flutter pub get
-
-      - name: Install CocoaPods
         run: |
-          cd ios
-          pod install || pod install --repo-update
-          cd ..
+          flutter pub get
+          flutter precache --ios
 
-      - name: Build iOS Framework & App
-        run: flutter build ios --release --no-codesign
+      - name: Build iOS App & Run CocoaPods
+        run: |
+          flutter build ios --release --no-codesign
 
       - name: Package App into IPA File
         run: |

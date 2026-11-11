@@ -10,16 +10,29 @@ project 'Runner', {
 }
 
 def flutter_root
-  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
-  unless File.exist?(generated_xcode_build_settings_path)
-    raise "#{generated_xcode_build_settings_path} must exist. If you're running pod install manually, make sure flutter pub get is executed first"
+  # Ưu tiên lấy từ biến môi trường FLUTTER_ROOT (do Flutter set trên máy Mac)
+  if ENV['FLUTTER_ROOT'] && !ENV['FLUTTER_ROOT'].empty? && !ENV['FLUTTER_ROOT'].include?('\\')
+    return ENV['FLUTTER_ROOT']
   end
 
-  File.foreach(generated_xcode_build_settings_path) do |line|
-    matches = line.match(/FLUTTER_ROOT\=(.*)/)
-    return matches[1].strip if matches
+  generated_xcode_build_settings_path = File.expand_path(File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__)
+  if File.exist?(generated_xcode_build_settings_path)
+    File.foreach(generated_xcode_build_settings_path) do |line|
+      matches = line.match(/FLUTTER_ROOT\=(.*)/)
+      if matches
+        path = matches[1].strip
+        # Bỏ qua nếu đường dẫn dạng Windows (C:\...) khi đang chạy trên Mac/Linux Cloud
+        return path unless path.start_with?('C:') || path.start_with?('c:') || path.include?('\\')
+      end
+    end
   end
-  raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig and running flutter pub get"
+
+  # Fallback mặc định cho macOS runner nếu chưa tìm thấy
+  if File.exist?('/Users/runner/hostedtoolcache/flutter')
+    return '/Users/runner/hostedtoolcache/flutter'
+  end
+
+  raise "FLUTTER_ROOT not found. Ensure Flutter SDK is installed and FLUTTER_ROOT is set."
 end
 
 require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
