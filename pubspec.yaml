@@ -1,0 +1,32 @@
+name: dc_tech_rental
+description: DC TECH - Quản lý thuê loa (Flutter + Google Sheets)
+publish_to: none
+version: 1.0.4+2
+
+environment:
+  sdk: ">=3.10.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  provider: ^6.1.2            # State management
+  gsheets: ^0.5.0             # Google Sheets API v4 (Service Account)
+  flutter_secure_storage: ^9.2.2  # Lưu credentials JSON an toàn trên máy
+  image_picker: ^1.1.2         # Chụp ảnh giao / thu hồi loa
+  url_launcher: ^6.3.1        # Mở Google Maps, gọi điện
+  share_plus: ^10.1.4         # Chia sẻ phiếu giao / biên nhận (Zalo, email...)
+  flutter_local_notifications: 18.0.1  # Nhắc lịch giao / thu loa (Android)
+  timezone: ^0.9.4            # Cần cho flutter_local_notifications
+  intl: ^0.19.0               # Format tiền / ngày giờ
+  crypto: ^3.0.5              # Băm mật khẩu SHA-256
+  file_picker: ^8.3.0         # Hộp thoại lưu file báo cáo (Android + Windows)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/logo.png
